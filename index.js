@@ -1,6 +1,15 @@
 import express from "express"
+import mongoose from "mongoose"
 
-let app =  express()
+const mongoURI = "mongodb+srv://admin:123@cluster0.wqdmimu.mongodb.net/?appName=Cluster0"
+
+mongoose.connect(mongoURI).then(
+    ()=>{
+        console.log("connected the mongodb database")
+    }
+)
+
+const app =  express()
 
 app.use(express.json())
 
