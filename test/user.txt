@@ -1,0 +1,86 @@
+[
+  {
+    "name": "Kasun Perera",
+    "email": "kasun@gmail.com",
+    "password": "$2b$10$hashedpassword1",
+    "role": "traveler",
+    "phoneNumber": "+94771234567",
+    "profilePhoto": "uploads/users/kasun.jpg",
+    "bio": "Adventure traveler who loves beaches and hiking.",
+    "location": {
+      "latitude": 6.9271,
+      "longitude": 79.8612
+    },
+    "interests": ["beaches", "mountains", "camping"],
+    "isVerified": true,
+    "isBlocked": false
+  },
+
+  {
+    "name": "Nimal Hotel Group",
+    "email": "hotelowner@gmail.com",
+    "password": "$2b$10$hashedpassword2",
+    "role": "hotel_owner",
+    "phoneNumber": "+94779876543",
+    "profilePhoto": "uploads/users/hotelowner.jpg",
+    "bio": "Owner of luxury hotels in Ella and Kandy.",
+    "location": {
+      "latitude": 7.2906,
+      "longitude": 80.6337
+    },
+    "interests": ["hospitality", "tourism"],
+    "isVerified": true,
+    "isBlocked": false
+  },
+
+  {
+    "name": "Lanka Ride Rentals",
+    "email": "vehicles@gmail.com",
+    "password": "$2b$10$hashedpassword3",
+    "role": "vehicle_company",
+    "phoneNumber": "+94775554433",
+    "profilePhoto": "uploads/users/vehicles.jpg",
+    "bio": "Vehicle rental service for tourists across Sri Lanka.",
+    "location": {
+      "latitude": 6.0535,
+      "longitude": 80.2210
+    },
+    "interests": ["cars", "tourism", "travel"],
+    "isVerified": true,
+    "isBlocked": false
+  },
+
+  {
+    "name": "Saman Guide",
+    "email": "guide@gmail.com",
+    "password": "$2b$10$hashedpassword4",
+    "role": "guide",
+    "phoneNumber": "+94776667788",
+    "profilePhoto": "uploads/users/guide.jpg",
+    "bio": "Professional travel guide fluent in English and Japanese.",
+    "location": {
+      "latitude": 7.9570,
+      "longitude": 80.7603
+    },
+    "interests": ["history", "culture", "guiding"],
+    "isVerified": true,
+    "isBlocked": false
+  },
+
+  {
+    "name": "System Admin",
+    "email": "admin@gmail.com",
+    "password": "$2b$10$hashedpassword5",
+    "role": "admin",
+    "phoneNumber": "+94770000000",
+    "profilePhoto": "uploads/users/admin.jpg",
+    "bio": "Main administrator of Smart AI Travel Platform.",
+    "location": {
+      "latitude": 6.9271,
+      "longitude": 79.8612
+    },
+    "interests": ["management", "security"],
+    "isVerified": true,
+    "isBlocked": false
+  }
+]

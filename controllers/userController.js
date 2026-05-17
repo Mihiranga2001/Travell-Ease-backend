@@ -12,7 +12,7 @@ export function createUser(req,res){
     const user = new User(req.body);
     user.save().then(() => {
         res.json({
-            message: "Student created successfully"
+            message: "User created successfully"
         });
     });
 }
