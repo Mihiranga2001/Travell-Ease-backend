@@ -2,7 +2,7 @@
   {
     "name": "Kasun Perera",
     "email": "kasun@gmail.com",
-    "password": "$2b$10$hashedpassword1",
+    "password": "password1",
     "role": "traveler",
     "phoneNumber": "+94771234567",
     "profilePhoto": "uploads/users/kasun.jpg",
@@ -19,7 +19,7 @@
   {
     "name": "Nimal Hotel Group",
     "email": "hotelowner@gmail.com",
-    "password": "$2b$10$hashedpassword2",
+    "password": "password2",
     "role": "hotel_owner",
     "phoneNumber": "+94779876543",
     "profilePhoto": "uploads/users/hotelowner.jpg",
@@ -36,7 +36,7 @@
   {
     "name": "Lanka Ride Rentals",
     "email": "vehicles@gmail.com",
-    "password": "$2b$10$hashedpassword3",
+    "password": "password3",
     "role": "vehicle_company",
     "phoneNumber": "+94775554433",
     "profilePhoto": "uploads/users/vehicles.jpg",
@@ -53,7 +53,7 @@
   {
     "name": "Saman Guide",
     "email": "guide@gmail.com",
-    "password": "$2b$10$hashedpassword4",
+    "password": "password4",
     "role": "guide",
     "phoneNumber": "+94776667788",
     "profilePhoto": "uploads/users/guide.jpg",
@@ -70,7 +70,7 @@
   {
     "name": "System Admin",
     "email": "admin@gmail.com",
-    "password": "$2b$10$hashedpassword5",
+    "password": "password5",
     "role": "admin",
     "phoneNumber": "+94770000000",
     "profilePhoto": "uploads/users/admin.jpg",

@@ -1,15 +1,24 @@
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 
-export function getUsers(req,res){
-    User.find().then((users) => {
-        res.json(users);
-    })
-    .catch(()=>{
-        res.status(500).json({
-            message: "Failed to fetch users"
-        });
-    });
+export async function getAllUsers(req,res){
+    if(!isAdmin(req)){
+		res.status(401).json({
+			message : "Unauthorized"
+		})
+		return
+	}
+
+	try{
+		const users = await User.find()
+		res.json(users)
+	}catch(error){
+		res.status(500).json({
+			message : "Error fetching users",
+			error : error.message
+		})
+	}
 }
 
 export function createUser(req,res){
@@ -64,17 +73,39 @@ export function loginUser(req, res) {
 			const isPasswordCorrect = bcrypt.compareSync(password, user.password);
 
             if (isPasswordCorrect) {
+                const payload = {
+                    email: user.email,
+                    name: user.name,
+                    role: user.role,
+                };
+
+                const token = jwt.sign(payload, "secretkey2001", {
+                    expiresIn: "150h",
+                });
+
                 res.json({
                     message: "Login successful",
-                    user: user,
+                    token: token,
+                    role: user.role,
                 });
             } else {
                 res.status(401).json({
-                    message: "Invalid credentials",
+                    message: "Invalid password",
                 });
             }
         }
     });
+}
+
+export function isAdmin(req) {
+	if (req.user == null) {
+		return false;
+	}
+	if (req.user.role != "admin") {
+		return false;
+	}
+
+	return true;
 }
 
 export function updateUser(req,res){

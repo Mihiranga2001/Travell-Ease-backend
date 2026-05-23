@@ -2,6 +2,7 @@ import express from "express"
 import mongoose from "mongoose"
 import User from "./models/User.js"
 import userRouter from "./Routes/userRouter.js"
+import jwt from "jsonwebtoken"
 
 
 const mongoURI = "mongodb+srv://admin:123@cluster0.wqdmimu.mongodb.net/?appName=Cluster0"
@@ -16,32 +17,27 @@ const app =  express()
 
 app.use(express.json())
 
-app.get("/",(req,res)=>{
-    //console.log(req)
-    //console.log(req.body)
-    //console.log("get request recieved")
-    //res.json({
-        //message : "good morning " + req.body.name
-    //})
-    User.find().then(
-        (users)=>{
-            res.json(users)
-        }
-    )
+app.use((req,res,next)=>{
+    const authorizationHeader = req.header("Authorization")
+    if(authorizationHeader != null){
+        const token = authorizationHeader.replace("Bearer ","")
+        jwt.verify(token,"secretkey2001",
+            (error,content)=>{
+                if(content == null){
+                    res.status(403).json({
+                        message : "invalid token"
+                    })
+                }else{
+                    req.user = content
+                    next()
+                }
+            
+        })
+    }else{
+        next()
+    }
 })
 
-app.post("/",(req,res)=>{
-    console.log(req.body)
-    const user = new User(req.body)
-    user.save().then(
-        ()=>{
-            res.json({
-                message : "user created succesfully"
-            })
-            
-        }
-    )
-})
 
 app.use("/users",userRouter)
 
