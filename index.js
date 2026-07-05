@@ -3,6 +3,7 @@ import mongoose from "mongoose"
 import User from "./models/User.js"
 import userRouter from "./Routes/userRouter.js"
 import jwt from "jsonwebtoken"
+import cors from "cors"
 
 
 const mongoURI = "mongodb+srv://admin:123@cluster0.wqdmimu.mongodb.net/?appName=Cluster0"
@@ -14,6 +15,8 @@ mongoose.connect(mongoURI).then(
 )
 
 const app =  express()
+
+app.use(cors())
 
 app.use(express.json())
 
