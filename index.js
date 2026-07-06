@@ -4,9 +4,11 @@ import User from "./models/User.js"
 import userRouter from "./Routes/userRouter.js"
 import jwt from "jsonwebtoken"
 import cors from "cors"
+import dotenv from "dotenv"
+dotenv.config()
 
 
-const mongoURI = "mongodb+srv://admin:123@cluster0.wqdmimu.mongodb.net/?appName=Cluster0"
+const mongoURI = process.env.MONGO_URI
 
 mongoose.connect(mongoURI).then(
     ()=>{
@@ -24,7 +26,7 @@ app.use((req,res,next)=>{
     const authorizationHeader = req.header("Authorization")
     if(authorizationHeader != null){
         const token = authorizationHeader.replace("Bearer ","")
-        jwt.verify(token,"secretkey2001",
+        jwt.verify(token,process.env.JWT_SECRET_KEY,
             (error,content)=>{
                 if(content == null){
                     res.status(403).json({
@@ -42,7 +44,7 @@ app.use((req,res,next)=>{
 })
 
 
-app.use("/users",userRouter)
+app.use("/api/users",userRouter)
 
 app.listen(3000,()=>{
     console.log("server is running on port 3000")

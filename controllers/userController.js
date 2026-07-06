@@ -79,7 +79,7 @@ export function loginUser(req, res) {
                     role: user.role,
                 };
 
-                const token = jwt.sign(payload, "secretkey2001", {
+                const token = jwt.sign(payload, process.env.JWT_SECRET_KEY, {
                     expiresIn: "150h",
                 });
 
