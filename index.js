@@ -2,6 +2,7 @@ import express from "express"
 import mongoose from "mongoose"
 import User from "./models/User.js"
 import userRouter from "./Routes/userRouter.js"
+import touristPlaceRoutes from "./routes/touristPlaceRoutes.js";
 import jwt from "jsonwebtoken"
 import cors from "cors"
 import dotenv from "dotenv"
@@ -45,6 +46,8 @@ app.use((req,res,next)=>{
 
 
 app.use("/api/users",userRouter)
+app.use("/uploads", express.static("uploads"));
+app.use("/api/places", touristPlaceRoutes);
 
 app.listen(3000,()=>{
     console.log("server is running on port 3000")
