@@ -1,36 +1,28 @@
 import express from "express";
-import multer from "multer";
-import path from "path";
 
 import {
-  createTouristPlace,
   getAllTouristPlaces,
-  getSingleTouristPlace,
+  getTouristPlaceById,
+  createTouristPlace,
   updateTouristPlace,
   deleteTouristPlace,
 } from "../controllers/touristPlaceController.js";
 
 const router = express.Router();
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-
-  filename: function (req, file, cb) {
-    const uniqueName =
-      Date.now() + "-" + Math.round(Math.random() * 1e9) + path.extname(file.originalname);
-
-    cb(null, uniqueName);
-  },
-});
-
-const upload = multer({ storage });
-
-router.post("/", upload.single("image"), createTouristPlace);
+// Get all tourist places
 router.get("/", getAllTouristPlaces);
-router.get("/:id", getSingleTouristPlace);
-router.put("/:id", upload.single("image"), updateTouristPlace);
+
+// Get one tourist place
+router.get("/:id", getTouristPlaceById);
+
+// Add a new tourist place
+router.post("/", createTouristPlace);
+
+// Update a tourist place
+router.put("/:id", updateTouristPlace);
+
+// Delete a tourist place
 router.delete("/:id", deleteTouristPlace);
 
 export default router;

@@ -1,129 +1,173 @@
-import TouristPlace from "../models/TouristPlace.js";
+import TouristPlace from "../models/touristPlace.js";
 
-export const createTouristPlace = async (req, res) => {
-  try {
-    const { name, category, location, district, description, rating, status } =
-      req.body;
+const ALLOWED_FIELDS = [
+  "name",
+  "category",
+  "location",
+  "district",
+  "description",
+  "image",
+  "rating",
+  "status",
+];
 
-    if (!name || !category || !location || !description) {
-      return res.status(400).json({
-        message: "Name, category, location and description are required",
-      });
+function getAllowedPlaceData(body) {
+  const placeData = {};
+
+  ALLOWED_FIELDS.forEach((field) => {
+    if (body[field] !== undefined) {
+      placeData[field] = body[field];
     }
+  });
 
-    const image = req.file ? `/uploads/${req.file.filename}` : "";
+  return placeData;
+}
 
-    const place = await TouristPlace.create({
-      name,
-      category,
-      location,
-      district,
-      description,
-      rating: rating || 4.5,
-      status: status || "approved",
-      image,
-    });
+function sendError(res, error, defaultMessage) {
+  console.error(error);
 
-    res.status(201).json({
-      message: "Tourist place added successfully",
-      place,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to add tourist place",
-      error: error.message,
+  if (error.name === "ValidationError") {
+    const messages = Object.values(error.errors).map(
+      (item) => item.message
+    );
+
+    return res.status(400).json({
+      success: false,
+      message: messages.join(", "),
     });
   }
-};
 
-export const getAllTouristPlaces = async (req, res) => {
+  if (error.name === "CastError") {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid tourist place ID",
+    });
+  }
+
+  return res.status(500).json({
+    success: false,
+    message: defaultMessage,
+  });
+}
+
+// GET /api/places
+export async function getAllTouristPlaces(req, res) {
   try {
-    const places = await TouristPlace.find().sort({ createdAt: -1 });
-
-    res.status(200).json({
-      places,
+    const places = await TouristPlace.find().sort({
+      createdAt: -1,
     });
+
+    return res.status(200).json(places);
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to fetch tourist places",
-      error: error.message,
-    });
+    return sendError(
+      res,
+      error,
+      "Failed to load tourist places"
+    );
   }
-};
+}
 
-export const getSingleTouristPlace = async (req, res) => {
+// GET /api/places/:id
+export async function getTouristPlaceById(req, res) {
   try {
     const place = await TouristPlace.findById(req.params.id);
 
     if (!place) {
-      return res.status(404).json({ message: "Tourist place not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Tourist place not found",
+      });
     }
 
-    res.status(200).json({ place });
+    return res.status(200).json(place);
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to fetch tourist place",
-      error: error.message,
-    });
-  }
-};
-
-export const updateTouristPlace = async (req, res) => {
-  try {
-    const { name, category, location, district, description, rating, status } =
-      req.body;
-
-    const updateData = {
-      name,
-      category,
-      location,
-      district,
-      description,
-      rating,
-      status,
-    };
-
-    if (req.file) {
-      updateData.image = `/uploads/${req.file.filename}`;
-    }
-
-    const place = await TouristPlace.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true }
+    return sendError(
+      res,
+      error,
+      "Failed to load tourist place"
     );
+  }
+}
 
-    if (!place) {
-      return res.status(404).json({ message: "Tourist place not found" });
-    }
+// POST /api/places
+export async function createTouristPlace(req, res) {
+  try {
+    const placeData = getAllowedPlaceData(req.body);
 
-    res.status(200).json({
-      message: "Tourist place updated successfully",
-      place,
+    const newPlace = await TouristPlace.create(placeData);
+
+    return res.status(201).json({
+      success: true,
+      message: "Tourist place added successfully",
+      place: newPlace,
     });
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to update tourist place",
-      error: error.message,
-    });
+    return sendError(
+      res,
+      error,
+      "Failed to add tourist place"
+    );
   }
-};
+}
 
-export const deleteTouristPlace = async (req, res) => {
+// PUT /api/places/:id
+export async function updateTouristPlace(req, res) {
   try {
-    const place = await TouristPlace.findByIdAndDelete(req.params.id);
+    const placeData = getAllowedPlaceData(req.body);
 
-    if (!place) {
-      return res.status(404).json({ message: "Tourist place not found" });
+    const updatedPlace =
+      await TouristPlace.findByIdAndUpdate(
+        req.params.id,
+        placeData,
+        {
+          new: true,
+          runValidators: true,
+        }
+      );
+
+    if (!updatedPlace) {
+      return res.status(404).json({
+        success: false,
+        message: "Tourist place not found",
+      });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
+      success: true,
+      message: "Tourist place updated successfully",
+      place: updatedPlace,
+    });
+  } catch (error) {
+    return sendError(
+      res,
+      error,
+      "Failed to update tourist place"
+    );
+  }
+}
+
+// DELETE /api/places/:id
+export async function deleteTouristPlace(req, res) {
+  try {
+    const deletedPlace =
+      await TouristPlace.findByIdAndDelete(req.params.id);
+
+    if (!deletedPlace) {
+      return res.status(404).json({
+        success: false,
+        message: "Tourist place not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
       message: "Tourist place deleted successfully",
     });
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to delete tourist place",
-      error: error.message,
-    });
+    return sendError(
+      res,
+      error,
+      "Failed to delete tourist place"
+    );
   }
-};
+}
