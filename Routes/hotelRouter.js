@@ -2,25 +2,34 @@ import express from "express";
 
 import {
   approveHotel,
-  createHotel,
+  createOwnerHotel,
   deleteHotel,
+  deleteOwnerHotel,
   getAllHotels,
   getAllHotelsForAdmin,
   getHotelById,
+  getMyHotels,
   rejectHotel,
   updateHotel,
+  updateOwnerHotel,
+  updateOwnerHotelAvailability,
+  updateOwnerRoomAvailability,
+  updateOwnerRoomInventory,
 } from "../controllers/HotelController.js";
 
 const router = express.Router();
 
-/*
-  Checks whether the user is logged in.
+function getLoggedInUserId(req) {
+  return (
+    req.user?.userId ||
+    req.user?.id ||
+    req.user?._id ||
+    null
+  );
+}
 
-  Your server.js JWT middleware adds the decoded token
-  information to req.user.
-*/
 function requireAuth(req, res, next) {
-  if (!req.user) {
+  if (!getLoggedInUserId(req)) {
     return res.status(401).json({
       success: false,
       message: "Please log in to access this route",
@@ -30,11 +39,24 @@ function requireAuth(req, res, next) {
   next();
 }
 
-/*
-  Checks whether the logged-in user is an administrator.
+function hotelOwnerOnly(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Please log in to access this route",
+    });
+  }
 
-  Keep only the property used by your User model and JWT token.
-*/
+  if (req.user.role !== "hotel_owner") {
+    return res.status(403).json({
+      success: false,
+      message: "Only hotel owners can access this route",
+    });
+  }
+
+  next();
+}
+
 function adminOnly(req, res, next) {
   if (!req.user) {
     return res.status(401).json({
@@ -58,10 +80,84 @@ function adminOnly(req, res, next) {
   next();
 }
 
-// Public route: approved and available hotels
+/*
+|--------------------------------------------------------------------------
+| Public routes
+|--------------------------------------------------------------------------
+*/
+
+// Approved and available hotels
 router.get("/", getAllHotels);
 
-// Admin route: retrieve all hotels
+/*
+|--------------------------------------------------------------------------
+| Hotel-owner routes
+|--------------------------------------------------------------------------
+*/
+
+// Logged-in owner's hotels
+router.get(
+  "/owner/my",
+  requireAuth,
+  hotelOwnerOnly,
+  getMyHotels
+);
+
+// Create hotel
+router.post(
+  "/owner",
+  requireAuth,
+  hotelOwnerOnly,
+  createOwnerHotel
+);
+
+// Update hotel details
+router.put(
+  "/owner/:id",
+  requireAuth,
+  hotelOwnerOnly,
+  updateOwnerHotel
+);
+
+// Delete owner's hotel
+router.delete(
+  "/owner/:id",
+  requireAuth,
+  hotelOwnerOnly,
+  deleteOwnerHotel
+);
+
+// Change complete hotel availability
+router.patch(
+  "/owner/:id/availability",
+  requireAuth,
+  hotelOwnerOnly,
+  updateOwnerHotelAvailability
+);
+
+// Change one room type's availability
+router.patch(
+  "/owner/:id/rooms/:roomIndex/availability",
+  requireAuth,
+  hotelOwnerOnly,
+  updateOwnerRoomAvailability
+);
+
+// Change one room type's total physical-room count
+router.patch(
+  "/owner/:id/rooms/:roomIndex/inventory",
+  requireAuth,
+  hotelOwnerOnly,
+  updateOwnerRoomInventory
+);
+
+/*
+|--------------------------------------------------------------------------
+| Admin routes
+|--------------------------------------------------------------------------
+*/
+
+// Get all hotel submissions
 router.get(
   "/admin/all",
   requireAuth,
@@ -69,15 +165,7 @@ router.get(
   getAllHotelsForAdmin
 );
 
-// Admin route: create a hotel
-router.post(
-  "/",
-  requireAuth,
-  adminOnly,
-  createHotel
-);
-
-// Admin route: approve a hotel
+// Approve hotel
 router.put(
   "/:id/approve",
   requireAuth,
@@ -85,7 +173,7 @@ router.put(
   approveHotel
 );
 
-// Admin route: reject a hotel
+// Reject hotel
 router.put(
   "/:id/reject",
   requireAuth,
@@ -93,7 +181,7 @@ router.put(
   rejectHotel
 );
 
-// Admin route: update a hotel
+// Optional admin hotel update
 router.put(
   "/:id",
   requireAuth,
@@ -101,7 +189,7 @@ router.put(
   updateHotel
 );
 
-// Admin route: delete a hotel
+// Admin delete hotel
 router.delete(
   "/:id",
   requireAuth,
@@ -109,8 +197,13 @@ router.delete(
   deleteHotel
 );
 
-// Public route: retrieve one hotel
-// Keep this route after /admin/all and the other named routes.
+/*
+|--------------------------------------------------------------------------
+| Public hotel details
+|--------------------------------------------------------------------------
+*/
+
+// Keep this dynamic route last
 router.get("/:id", getHotelById);
 
 export default router;
