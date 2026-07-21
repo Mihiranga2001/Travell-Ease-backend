@@ -2,10 +2,15 @@ import mongoose from "mongoose";
 
 const vehicleSchema = new mongoose.Schema(
   {
+    /*
+      No separate VehicleRentalCompany model is required.
+
+      companyId stores the MongoDB _id of the authenticated User
+      whose role is "vehicle_company".
+    */
     companyId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "VehicleRentalCompany",
-      required: [true, "Vehicle rental company is required"],
+      required: [true, "Vehicle company is required"],
       index: true,
     },
 
@@ -24,6 +29,8 @@ const vehicleSchema = new mongoose.Schema(
       type: String,
       required: [true, "Vehicle model is required"],
       trim: true,
+      minlength: [2, "Vehicle model must contain at least 2 characters"],
+      maxlength: [150, "Vehicle model cannot exceed 150 characters"],
     },
 
     image: {
@@ -82,7 +89,19 @@ const vehicleSchema = new mongoose.Schema(
   }
 );
 
+vehicleSchema.index({
+  companyId: 1,
+  createdAt: -1,
+});
+
+vehicleSchema.index({
+  isApproved: 1,
+  isAvailable: 1,
+  type: 1,
+});
+
 const Vehicle =
-  mongoose.models.Vehicle || mongoose.model("Vehicle", vehicleSchema);
+  mongoose.models.Vehicle ||
+  mongoose.model("Vehicle", vehicleSchema);
 
 export default Vehicle;
