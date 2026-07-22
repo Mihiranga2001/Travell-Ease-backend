@@ -4,6 +4,7 @@ import userRouter from "./Routes/userRouter.js";
 import touristPlaceRouter from "./Routes/touristPlaceRouter.js";
 import hotelRouter from "./Routes/hotelRouter.js";
 import vehicleRouter from "./Routes/vehicleRouter.js";
+import travelGuideRouter from "./Routes/travelGuideRouter.js";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -79,6 +80,7 @@ app.use("/uploads", express.static("uploads"));
 app.use("/api/places", touristPlaceRouter);
 app.use("/api/hotels", hotelRouter);
 app.use("/api/vehicles", vehicleRouter);
+app.use("/api/travel-guides", travelGuideRouter);
 
 app.listen(3000, () => {
   console.log("Server is running on port 3000");
