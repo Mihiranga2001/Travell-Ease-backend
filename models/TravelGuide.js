@@ -1,5 +1,26 @@
 import mongoose from "mongoose";
 
+const notificationSettingsSchema =
+  new mongoose.Schema(
+    {
+      bookingRequests: {
+        type: Boolean,
+        default: true,
+      },
+      bookingUpdates: {
+        type: Boolean,
+        default: true,
+      },
+      reviewAlerts: {
+        type: Boolean,
+        default: true,
+      },
+    },
+    {
+      _id: false,
+    }
+  );
+
 const travelGuideSchema = new mongoose.Schema(
   {
     userId: {
@@ -15,6 +36,7 @@ const travelGuideSchema = new mongoose.Schema(
         {
           type: String,
           trim: true,
+          maxlength: 60,
         },
       ],
       default: [],
@@ -24,6 +46,7 @@ const travelGuideSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: "",
+      maxlength: 3000,
     },
 
     pricePerDay: {
@@ -37,6 +60,7 @@ const travelGuideSchema = new mongoose.Schema(
         {
           type: String,
           trim: true,
+          maxlength: 100,
         },
       ],
       default: [],
@@ -49,14 +73,33 @@ const travelGuideSchema = new mongoose.Schema(
       max: 5,
     },
 
+    reviewCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     isAvailable: {
       type: Boolean,
       default: true,
     },
 
+    availabilityNote: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 500,
+    },
+
+    notificationSettings: {
+      type: notificationSettingsSchema,
+      default: () => ({}),
+    },
+
     isApproved: {
       type: Boolean,
       default: false,
+      index: true,
     },
   },
   {

@@ -1,15 +1,25 @@
 import express from "express";
-
 import {
   approveGuide,
   createGuide,
+  createGuideBooking,
+  createGuideReview,
   deleteGuide,
   getAllGuidesForAdmin,
   getGuideById,
   getGuides,
+  getMyBookings,
+  getMyDashboard,
+  getMyEarnings,
   getMyGuide,
+  getMyReports,
+  getMyReviews,
   rejectGuide,
   updateGuide,
+  updateMyAvailability,
+  updateMyBookingStatus,
+  updateMySettings,
+  updateMySkills,
 } from "../controllers/travelGuideController.js";
 
 const travelGuideRouter = express.Router();
@@ -47,35 +57,71 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-/*
-|--------------------------------------------------------------------------
-| Public routes
-|--------------------------------------------------------------------------
-*/
-
+/* Public list */
 travelGuideRouter.get("/", getGuides);
 
-/*
-|--------------------------------------------------------------------------
-| Logged-in guide routes
-|--------------------------------------------------------------------------
-*/
-
+/* Logged-in guide profile and dashboard tabs */
 travelGuideRouter.get(
   "/my-profile",
   requireLogin,
   getMyGuide
 );
 
-/*
-|--------------------------------------------------------------------------
-| Admin routes
-|--------------------------------------------------------------------------
-|
-| These routes must appear before /:id.
-|
-*/
+travelGuideRouter.get(
+  "/my/dashboard",
+  requireLogin,
+  getMyDashboard
+);
 
+travelGuideRouter.get(
+  "/my/bookings",
+  requireLogin,
+  getMyBookings
+);
+
+travelGuideRouter.patch(
+  "/my/bookings/:bookingId/status",
+  requireLogin,
+  updateMyBookingStatus
+);
+
+travelGuideRouter.get(
+  "/my/reviews",
+  requireLogin,
+  getMyReviews
+);
+
+travelGuideRouter.get(
+  "/my/earnings",
+  requireLogin,
+  getMyEarnings
+);
+
+travelGuideRouter.get(
+  "/my/reports",
+  requireLogin,
+  getMyReports
+);
+
+travelGuideRouter.patch(
+  "/my/availability",
+  requireLogin,
+  updateMyAvailability
+);
+
+travelGuideRouter.patch(
+  "/my/skills",
+  requireLogin,
+  updateMySkills
+);
+
+travelGuideRouter.patch(
+  "/my/settings",
+  requireLogin,
+  updateMySettings
+);
+
+/* Administrator */
 travelGuideRouter.get(
   "/admin/all",
   requireAdmin,
@@ -94,14 +140,7 @@ travelGuideRouter.put(
   rejectGuide
 );
 
-/*
-|--------------------------------------------------------------------------
-| General guide routes
-|--------------------------------------------------------------------------
-*/
-
-travelGuideRouter.get("/:id", getGuideById);
-
+/* Create and update guide profile */
 travelGuideRouter.post(
   "/",
   requireLogin,
@@ -119,5 +158,21 @@ travelGuideRouter.delete(
   requireLogin,
   deleteGuide
 );
+
+/* Traveler booking and review */
+travelGuideRouter.post(
+  "/:guideId/bookings",
+  requireLogin,
+  createGuideBooking
+);
+
+travelGuideRouter.post(
+  "/:guideId/reviews",
+  requireLogin,
+  createGuideReview
+);
+
+/* Dynamic public route must stay last */
+travelGuideRouter.get("/:id", getGuideById);
 
 export default travelGuideRouter;
