@@ -2,105 +2,206 @@ import express from "express";
 
 import {
   approveVehicle,
+  cancelMyVehicleBooking,
   createCompanyVehicle,
-  createVehicle,
+  createVehicleBooking,
+  createVehicleReview,
   deleteCompanyVehicle,
   deleteVehicle,
   getAllVehiclesForAdmin,
+  getCompanyVehicleBookings,
+  getCompanyVehicleReviews,
   getMyCompanyVehicles,
+  getMyVehicleBookings,
+  getPublicVehicleReviews,
   getVehicleById,
   getVehicles,
   rejectVehicle,
+  replyToVehicleReview,
+  updateCompanyBookingStatus,
   updateCompanyVehicle,
   updateCompanyVehicleAvailability,
   updateVehicle,
   updateVehicleAvailability,
-} from "../Controllers/vehicleController.js";
+} from "../controllers/VehicleController.js";
 
-const router = express.Router();
+const vehicleRouter = express.Router();
+const vehicleBookingRouter = express.Router();
+const vehicleReviewRouter = express.Router();
 
-/*
-  PUBLIC LIST
-*/
-router.get("/", getVehicles);
+function getLoggedInUserId(req) {
+  return req.user?.userId || req.user?.id || req.user?._id || null;
+}
 
-/*
-  ADMIN AND COMPANY STATIC ROUTES
+function normalizeRole(role) {
+  return String(role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
 
-  Keep these before "/:id".
-*/
-router.get(
-  "/admin/all",
-  getAllVehiclesForAdmin
-);
+function requireAuth(req, res, next) {
+  if (!getLoggedInUserId(req)) {
+    return res.status(401).json({
+      success: false,
+      message: "Please log in to access this route",
+    });
+  }
 
-router.get(
+  next();
+}
+
+function vehicleCompanyOnly(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Please log in to access this route",
+    });
+  }
+
+  const role = normalizeRole(req.user.role || req.user.userType);
+
+  if (role !== "vehicle_company" && role !== "vehicle_comapny") {
+    return res.status(403).json({
+      success: false,
+      message: "Only vehicle companies can access this route",
+    });
+  }
+
+  next();
+}
+
+function adminOnly(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Please log in to access this route",
+    });
+  }
+
+  const role = normalizeRole(req.user.role || req.user.userType);
+  const isAdmin = role === "admin" || req.user.isAdmin === true;
+
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: "Only administrators can access this route",
+    });
+  }
+
+  next();
+}
+
+/* Vehicle routes mounted at /api/vehicles */
+vehicleRouter.get("/", getVehicles);
+
+vehicleRouter.get(
   "/company/my",
+  requireAuth,
+  vehicleCompanyOnly,
   getMyCompanyVehicles
 );
-
-router.post(
+vehicleRouter.post(
   "/company",
+  requireAuth,
+  vehicleCompanyOnly,
   createCompanyVehicle
 );
-
-router.put(
+vehicleRouter.put(
   "/company/:id",
+  requireAuth,
+  vehicleCompanyOnly,
   updateCompanyVehicle
 );
-
-router.delete(
+vehicleRouter.delete(
   "/company/:id",
+  requireAuth,
+  vehicleCompanyOnly,
   deleteCompanyVehicle
 );
-
-router.patch(
+vehicleRouter.patch(
   "/company/:id/availability",
+  requireAuth,
+  vehicleCompanyOnly,
   updateCompanyVehicleAvailability
 );
 
-/*
-  Optional compatibility route for older clients.
-  It still uses secure vehicle-company creation.
-*/
-router.post("/", createVehicle);
-
-/*
-  ADMIN MANAGEMENT
-*/
-router.put(
+vehicleRouter.get(
+  "/admin/all",
+  requireAuth,
+  adminOnly,
+  getAllVehiclesForAdmin
+);
+vehicleRouter.put(
   "/:id/approve",
+  requireAuth,
+  adminOnly,
   approveVehicle
 );
-
-router.put(
+vehicleRouter.put(
   "/:id/reject",
+  requireAuth,
+  adminOnly,
   rejectVehicle
 );
-
-router.patch(
+vehicleRouter.patch(
   "/:id/availability",
+  requireAuth,
+  adminOnly,
   updateVehicleAvailability
 );
-
-router.put(
+vehicleRouter.put(
   "/:id",
+  requireAuth,
+  adminOnly,
   updateVehicle
 );
-
-router.delete(
+vehicleRouter.delete(
   "/:id",
+  requireAuth,
+  adminOnly,
   deleteVehicle
 );
 
-/*
-  PUBLIC DETAILS
+// Keep the dynamic public route last.
+vehicleRouter.get("/:id", getVehicleById);
 
-  Keep this last.
-*/
-router.get(
-  "/:id",
-  getVehicleById
+/* Booking routes mounted at /api/vehicle-bookings */
+vehicleBookingRouter.post("/", requireAuth, createVehicleBooking);
+vehicleBookingRouter.get("/my", requireAuth, getMyVehicleBookings);
+vehicleBookingRouter.patch(
+  "/my/:id/cancel",
+  requireAuth,
+  cancelMyVehicleBooking
+);
+vehicleBookingRouter.get(
+  "/company/my",
+  requireAuth,
+  vehicleCompanyOnly,
+  getCompanyVehicleBookings
+);
+vehicleBookingRouter.patch(
+  "/company/:id/status",
+  requireAuth,
+  vehicleCompanyOnly,
+  updateCompanyBookingStatus
 );
 
-export default router;
+/* Review routes mounted at /api/vehicle-reviews */
+vehicleReviewRouter.get("/vehicle/:vehicleId", getPublicVehicleReviews);
+vehicleReviewRouter.post("/", requireAuth, createVehicleReview);
+vehicleReviewRouter.get(
+  "/company/my",
+  requireAuth,
+  vehicleCompanyOnly,
+  getCompanyVehicleReviews
+);
+vehicleReviewRouter.patch(
+  "/company/:id/reply",
+  requireAuth,
+  vehicleCompanyOnly,
+  replyToVehicleReview
+);
+
+export { vehicleBookingRouter, vehicleReviewRouter };
+export default vehicleRouter;

@@ -1,7 +1,12 @@
 import mongoose from "mongoose";
 import Vehicle from "../models/vehicle.js";
+import VehicleBooking from "../models/VehicleBooking.js";
+import VehicleReview from "../models/VehicleReview.js";
 
 const VEHICLE_TYPES = ["bike", "tuk", "car", "van", "bus"];
+const COMPANY_FIELDS =
+  "name companyName email phoneNumber profilePhoto role isBlocked";
+const TRAVELER_FIELDS = "name email phoneNumber profilePhoto role";
 
 function normalizeRole(role) {
   return String(role || "")
@@ -11,187 +16,156 @@ function normalizeRole(role) {
 }
 
 function isVehicleCompanyRole(role) {
-  const normalizedRole = normalizeRole(role);
-
-  return (
-    normalizedRole === "vehicle_company" ||
-    normalizedRole === "vehicle_comapny"
-  );
+  const normalized = normalizeRole(role);
+  return normalized === "vehicle_company" || normalized === "vehicle_comapny";
 }
 
 function isAdminRole(role) {
   return normalizeRole(role) === "admin";
 }
 
-function isValidObjectId(value) {
+function getLoggedInUserId(req) {
+  const value =
+    req.user?.userId ||
+    req.user?.id ||
+    req.user?._id ||
+    req.user?.companyId ||
+    null;
+
+  if (value && typeof value === "object") {
+    return value._id || value.id || null;
+  }
+
+  return value;
+}
+
+function isValidId(value) {
   return mongoose.Types.ObjectId.isValid(value);
 }
 
-function getAuthenticatedUserId(req) {
-  const value =
-    req.user?.id ||
-    req.user?._id ||
-    req.user?.userId ||
-    req.user?.companyId;
-
-  if (value && typeof value === "object") {
-    return value._id || value.id || "";
+function toBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
   }
 
-  return value || "";
+  return value === true || value === "true" || value === 1 || value === "1";
 }
 
-function requireVehicleCompany(req, res) {
+function requireCompanyContext(req, res) {
   if (!req.user) {
     res.status(401).json({
       success: false,
       message: "Authentication is required",
     });
-
     return null;
   }
 
-  if (!isVehicleCompanyRole(req.user.role)) {
+  if (!isVehicleCompanyRole(req.user.role || req.user.userType)) {
     res.status(403).json({
       success: false,
-      message:
-        "Only vehicle-company accounts can access this resource",
+      message: "Only vehicle-company accounts can access this resource",
     });
-
     return null;
   }
 
-  const companyId = getAuthenticatedUserId(req);
+  const companyId = getLoggedInUserId(req);
 
-  if (!companyId || !isValidObjectId(companyId)) {
+  if (!companyId || !isValidId(companyId)) {
     res.status(400).json({
       success: false,
       message:
         "A valid logged-in vehicle-company user ID is missing from the authentication token",
     });
-
     return null;
   }
 
-  return {
-    companyId: String(companyId),
-  };
+  return { companyId: String(companyId) };
 }
 
-function requireAdmin(req, res) {
+function requireAdminContext(req, res) {
   if (!req.user) {
     res.status(401).json({
       success: false,
       message: "Authentication is required",
     });
-
     return false;
   }
 
-  if (!isAdminRole(req.user.role)) {
+  if (!isAdminRole(req.user.role || req.user.userType) && req.user.isAdmin !== true) {
     res.status(403).json({
       success: false,
       message: "Administrator access is required",
     });
-
     return false;
   }
 
   return true;
 }
 
-function buildVehiclePayload(
-  body,
-  { partial = false } = {}
-) {
+function cleanLocation(location = {}) {
+  return {
+    latitude:
+      location.latitude === "" ||
+      location.latitude === undefined ||
+      location.latitude === null
+        ? 0
+        : Number(location.latitude),
+    longitude:
+      location.longitude === "" ||
+      location.longitude === undefined ||
+      location.longitude === null
+        ? 0
+        : Number(location.longitude),
+  };
+}
+
+function buildVehiclePayload(body, { partial = false } = {}) {
   const payload = {};
 
   if (!partial || body.type !== undefined) {
-    payload.type =
-      typeof body.type === "string"
-        ? body.type.trim().toLowerCase()
-        : body.type;
+    payload.type = String(body.type || "").trim().toLowerCase();
   }
-
   if (!partial || body.model !== undefined) {
-    payload.model =
-      typeof body.model === "string"
-        ? body.model.trim()
-        : body.model;
+    payload.model = String(body.model || "").trim();
   }
-
   if (!partial || body.image !== undefined) {
-    payload.image =
-      typeof body.image === "string"
-        ? body.image.trim()
-        : body.image;
+    payload.image = String(body.image || "").trim();
   }
-
   if (!partial || body.pricePerDay !== undefined) {
     payload.pricePerDay = Number(body.pricePerDay);
   }
-
   if (!partial || body.seats !== undefined) {
     payload.seats = Number(body.seats);
   }
-
   if (!partial || body.location !== undefined) {
-    payload.location = {
-      latitude:
-        body.location?.latitude === undefined ||
-        body.location?.latitude === ""
-          ? 0
-          : Number(body.location.latitude),
-
-      longitude:
-        body.location?.longitude === undefined ||
-        body.location?.longitude === ""
-          ? 0
-          : Number(body.location.longitude),
-    };
+    payload.location = cleanLocation(body.location);
   }
 
   return payload;
 }
 
-function validateVehiclePayload(
-  payload,
-  { partial = false } = {}
-) {
-  if (
-    (!partial || payload.type !== undefined) &&
-    !VEHICLE_TYPES.includes(payload.type)
-  ) {
+function validateVehiclePayload(payload, { partial = false } = {}) {
+  if ((!partial || payload.type !== undefined) && !VEHICLE_TYPES.includes(payload.type)) {
     return "Vehicle type must be bike, tuk, car, van or bus";
   }
 
   if (!partial || payload.model !== undefined) {
-    if (
-      typeof payload.model !== "string" ||
-      payload.model.length < 2
-    ) {
+    if (typeof payload.model !== "string" || payload.model.length < 2) {
       return "Vehicle model must contain at least 2 characters";
     }
-
     if (payload.model.length > 150) {
       return "Vehicle model cannot exceed 150 characters";
     }
   }
 
   if (!partial || payload.pricePerDay !== undefined) {
-    if (
-      !Number.isFinite(payload.pricePerDay) ||
-      payload.pricePerDay < 0
-    ) {
+    if (!Number.isFinite(payload.pricePerDay) || payload.pricePerDay < 0) {
       return "Price per day must be a valid non-negative number";
     }
   }
 
   if (!partial || payload.seats !== undefined) {
-    if (
-      !Number.isInteger(payload.seats) ||
-      payload.seats < 1
-    ) {
+    if (!Number.isInteger(payload.seats) || payload.seats < 1) {
       return "Seats must be a whole number of at least 1";
     }
   }
@@ -200,19 +174,10 @@ function validateVehiclePayload(
     const latitude = Number(payload.location?.latitude);
     const longitude = Number(payload.location?.longitude);
 
-    if (
-      !Number.isFinite(latitude) ||
-      latitude < -90 ||
-      latitude > 90
-    ) {
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
       return "Latitude must be between -90 and 90";
     }
-
-    if (
-      !Number.isFinite(longitude) ||
-      longitude < -180 ||
-      longitude > 180
-    ) {
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
       return "Longitude must be between -180 and 180";
     }
   }
@@ -220,964 +185,938 @@ function validateVehiclePayload(
   return "";
 }
 
-function sendControllerError(
-  res,
-  error,
-  fallbackMessage
-) {
-  if (error.name === "ValidationError") {
-    const errors = Object.values(error.errors).map(
-      (validationError) => validationError.message
-    );
-
-    return res.status(400).json({
-      success: false,
-      message:
-        errors[0] || "Vehicle validation failed",
-      errors,
-    });
+function getApprovalStatus(vehicle) {
+  if (vehicle?.approvalStatus) {
+    return vehicle.approvalStatus;
   }
+  return vehicle?.isApproved === true ? "approved" : "pending";
+}
 
-  if (error.name === "CastError") {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid database identifier",
-    });
+function getValidationMessage(error) {
+  if (error?.name === "ValidationError") {
+    return Object.values(error.errors)
+      .map((item) => item.message)
+      .join(", ");
   }
+  if (error?.name === "CastError") {
+    return "Invalid database identifier";
+  }
+  if (error?.code === 11000) {
+    return "Duplicate data already exists";
+  }
+  return error?.message || "Something went wrong";
+}
 
+function sendError(res, error, fallbackMessage, defaultStatus = 500) {
   console.error(fallbackMessage, error);
+  const clientError =
+    error?.name === "ValidationError" ||
+    error?.name === "CastError" ||
+    error?.code === 11000;
 
-  return res.status(500).json({
+  return res.status(clientError ? 400 : defaultStatus).json({
     success: false,
-    message: fallbackMessage,
-    error: error.message,
+    message: clientError ? getValidationMessage(error) : fallbackMessage,
   });
 }
 
-/**
- * GET /api/vehicles
- *
- * Public list:
- * - approved vehicles only
- * - available and unavailable vehicles are both returned
- */
+function calculateRentalDays(startDate, endDate) {
+  return Math.ceil((endDate.getTime() - startDate.getTime()) / 86400000);
+}
+
+async function hasApprovedBookingOverlap({
+  vehicleId,
+  startDate,
+  endDate,
+  excludeBookingId,
+}) {
+  const query = {
+    vehicleId,
+    status: "approved",
+    startDate: { $lt: endDate },
+    endDate: { $gt: startDate },
+  };
+
+  if (excludeBookingId) {
+    query._id = { $ne: excludeBookingId };
+  }
+
+  return Boolean(await VehicleBooking.exists(query));
+}
+
+async function refreshVehicleRating(vehicleId) {
+  const result = await VehicleReview.aggregate([
+    {
+      $match: {
+        vehicleId: new mongoose.Types.ObjectId(vehicleId),
+        isVisible: true,
+      },
+    },
+    {
+      $group: {
+        _id: "$vehicleId",
+        rating: { $avg: "$rating" },
+        reviewCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const summary = result[0] || { rating: 0, reviewCount: 0 };
+
+  await Vehicle.findByIdAndUpdate(vehicleId, {
+    rating: Number(summary.rating || 0),
+    reviewCount: Number(summary.reviewCount || 0),
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Vehicle public routes                                                       */
+/* -------------------------------------------------------------------------- */
+
 export async function getVehicles(req, res) {
   try {
     const filter = {
-      isApproved: true,
+      $or: [{ approvalStatus: "approved" }, { isApproved: true }],
     };
 
     if (req.query.type) {
-      const type = String(req.query.type)
-        .trim()
-        .toLowerCase();
-
+      const type = String(req.query.type).trim().toLowerCase();
       if (!VEHICLE_TYPES.includes(type)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid vehicle type",
-        });
+        return res.status(400).json({ success: false, message: "Invalid vehicle type" });
       }
-
       filter.type = type;
     }
 
     if (req.query.companyId) {
-      if (!isValidObjectId(req.query.companyId)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid company ID",
-        });
+      if (!isValidId(req.query.companyId)) {
+        return res.status(400).json({ success: false, message: "Invalid company ID" });
       }
-
       filter.companyId = req.query.companyId;
     }
 
     if (req.query.isAvailable !== undefined) {
-      const availabilityText = String(
-        req.query.isAvailable
-      ).toLowerCase();
-
-      if (
-        availabilityText !== "true" &&
-        availabilityText !== "false"
-      ) {
+      const value = String(req.query.isAvailable).toLowerCase();
+      if (!["true", "false"].includes(value)) {
         return res.status(400).json({
           success: false,
-          message:
-            "isAvailable must be true or false",
+          message: "isAvailable must be true or false",
         });
       }
-
-      filter.isAvailable =
-        availabilityText === "true";
+      filter.isAvailable = value === "true";
     }
 
-    if (
-      req.query.minPrice !== undefined ||
-      req.query.maxPrice !== undefined
-    ) {
-      filter.pricePerDay = {};
+    const vehicles = await Vehicle.find(filter)
+      .populate("companyId", COMPANY_FIELDS)
+      .sort({ createdAt: -1 });
 
-      if (req.query.minPrice !== undefined) {
-        const minPrice = Number(req.query.minPrice);
-
-        if (
-          !Number.isFinite(minPrice) ||
-          minPrice < 0
-        ) {
-          return res.status(400).json({
-            success: false,
-            message:
-              "Minimum price must be a valid non-negative number",
-          });
-        }
-
-        filter.pricePerDay.$gte = minPrice;
-      }
-
-      if (req.query.maxPrice !== undefined) {
-        const maxPrice = Number(req.query.maxPrice);
-
-        if (
-          !Number.isFinite(maxPrice) ||
-          maxPrice < 0
-        ) {
-          return res.status(400).json({
-            success: false,
-            message:
-              "Maximum price must be a valid non-negative number",
-          });
-        }
-
-        filter.pricePerDay.$lte = maxPrice;
-      }
-    }
-
-    if (req.query.minSeats !== undefined) {
-      const minSeats = Number(req.query.minSeats);
-
-      if (
-        !Number.isInteger(minSeats) ||
-        minSeats < 1
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Minimum seats must be a whole number of at least 1",
-        });
-      }
-
-      filter.seats = {
-        $gte: minSeats,
-      };
-    }
-
-    const vehicles = await Vehicle.find(filter).sort({
-      createdAt: -1,
-    });
-
-    return res.status(200).json({
-      success: true,
-      count: vehicles.length,
-      vehicles,
-    });
+    return res.status(200).json({ success: true, count: vehicles.length, vehicles });
   } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to load vehicles"
-    );
+    return sendError(res, error, "Failed to load vehicles");
   }
 }
 
-/**
- * GET /api/vehicles/:id
- *
- * Public details:
- * - approved vehicle only
- * - still accessible when unavailable
- */
 export async function getVehicleById(req, res) {
   try {
-    if (!isValidObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid vehicle ID",
-      });
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
     }
 
-    const vehicle = await Vehicle.findOne({
-      _id: req.params.id,
-      isApproved: true,
-    });
-
+    const vehicle = await Vehicle.findById(id).populate("companyId", COMPANY_FIELDS);
     if (!vehicle) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Vehicle not found or has not been approved",
-      });
+      return res.status(404).json({ success: false, message: "Vehicle not found" });
     }
 
-    return res.status(200).json({
-      success: true,
-      vehicle,
-    });
+    const loggedInId = String(getLoggedInUserId(req) || "");
+    const companyId = String(vehicle.companyId?._id || vehicle.companyId || "");
+    const isAdmin = isAdminRole(req.user?.role || req.user?.userType) || req.user?.isAdmin === true;
+    const isOwner = loggedInId && loggedInId === companyId;
+    const isPublic = getApprovalStatus(vehicle) === "approved";
+
+    if (!isAdmin && !isOwner && !isPublic) {
+      return res.status(404).json({ success: false, message: "Vehicle not found" });
+    }
+
+    return res.status(200).json({ success: true, vehicle });
   } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to load vehicle"
-    );
+    return sendError(res, error, "Failed to load vehicle");
   }
 }
 
-/**
- * GET /api/vehicles/company/my
- */
-export async function getMyCompanyVehicles(
-  req,
-  res
-) {
+/* -------------------------------------------------------------------------- */
+/* Vehicle company routes                                                      */
+/* -------------------------------------------------------------------------- */
+
+export async function getMyCompanyVehicles(req, res) {
   try {
-    const context = requireVehicleCompany(
-      req,
-      res
-    );
+    const context = requireCompanyContext(req, res);
+    if (!context) return;
 
-    if (!context) {
-      return;
-    }
+    const vehicles = await Vehicle.find({ companyId: context.companyId })
+      .populate("companyId", COMPANY_FIELDS)
+      .sort({ createdAt: -1 });
 
-    const vehicles = await Vehicle.find({
-      companyId: context.companyId,
-    }).sort({
-      createdAt: -1,
-    });
-
-    return res.status(200).json({
-      success: true,
-      count: vehicles.length,
-      vehicles,
-    });
+    return res.status(200).json({ success: true, count: vehicles.length, vehicles });
   } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to load company vehicles"
-    );
+    return sendError(res, error, "Failed to load company vehicles");
   }
 }
 
-/**
- * POST /api/vehicles/company
- */
-export async function createCompanyVehicle(
-  req,
-  res
-) {
+export async function createCompanyVehicle(req, res) {
   try {
-    const context = requireVehicleCompany(
-      req,
-      res
-    );
-
-    if (!context) {
-      return;
-    }
+    const context = requireCompanyContext(req, res);
+    if (!context) return;
 
     const payload = buildVehiclePayload(req.body);
-    const validationMessage =
-      validateVehiclePayload(payload);
+    const validationMessage = validateVehiclePayload(payload);
 
     if (validationMessage) {
-      return res.status(400).json({
-        success: false,
-        message: validationMessage,
-      });
+      return res.status(400).json({ success: false, message: validationMessage });
     }
 
     const vehicle = await Vehicle.create({
       ...payload,
       companyId: context.companyId,
-      isApproved: false,
       isAvailable: true,
+      isApproved: false,
+      approvalStatus: "pending",
+      rejectionReason: "",
     });
+
+    await vehicle.populate("companyId", COMPANY_FIELDS);
 
     return res.status(201).json({
       success: true,
-      message:
-        "Vehicle created and sent for administrator approval",
+      message: "Vehicle created and sent for administrator approval",
       vehicle,
     });
   } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to create vehicle"
-    );
+    return sendError(res, error, "Failed to create vehicle", 400);
   }
 }
 
-/**
- * PUT /api/vehicles/company/:id
- *
- * Editing vehicle details resets approval to pending.
- * Availability is not changed here.
- */
-export async function updateCompanyVehicle(
-  req,
-  res
-) {
+export async function updateCompanyVehicle(req, res) {
   try {
-    const context = requireVehicleCompany(
-      req,
-      res
-    );
+    const context = requireCompanyContext(req, res);
+    if (!context) return;
 
-    if (!context) {
-      return;
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
     }
 
-    if (!isValidObjectId(req.params.id)) {
-      return res.status(400).json({
+    const vehicle = await Vehicle.findOne({ _id: id, companyId: context.companyId });
+    if (!vehicle) {
+      return res.status(404).json({
         success: false,
-        message: "Invalid vehicle ID",
+        message: "Vehicle not found or it does not belong to your company",
       });
     }
 
-    const payload = buildVehiclePayload(
-      req.body,
-      {
-        partial: true,
-      }
-    );
-
+    const payload = buildVehiclePayload(req.body, { partial: true });
     if (Object.keys(payload).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "No vehicle fields were provided",
-      });
+      return res.status(400).json({ success: false, message: "No vehicle fields were provided" });
     }
 
-    const validationMessage =
-      validateVehiclePayload(payload, {
-        partial: true,
-      });
-
+    const validationMessage = validateVehiclePayload(payload, { partial: true });
     if (validationMessage) {
-      return res.status(400).json({
+      return res.status(400).json({ success: false, message: validationMessage });
+    }
+
+    Object.assign(vehicle, payload, {
+      isApproved: false,
+      approvalStatus: "pending",
+      rejectionReason: "",
+    });
+
+    await vehicle.save();
+    await vehicle.populate("companyId", COMPANY_FIELDS);
+
+    return res.status(200).json({
+      success: true,
+      message: "Vehicle updated and returned to pending approval",
+      vehicle,
+    });
+  } catch (error) {
+    return sendError(res, error, "Failed to update vehicle", 400);
+  }
+}
+
+export async function deleteCompanyVehicle(req, res) {
+  try {
+    const context = requireCompanyContext(req, res);
+    if (!context) return;
+
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
+    }
+
+    const activeBooking = await VehicleBooking.exists({
+      vehicleId: id,
+      status: { $in: ["pending", "approved"] },
+    });
+
+    if (activeBooking) {
+      return res.status(409).json({
         success: false,
-        message: validationMessage,
+        message: "This vehicle has an active booking and cannot be deleted",
       });
     }
 
-    const vehicle =
-      await Vehicle.findOneAndUpdate(
-        {
-          _id: req.params.id,
-          companyId: context.companyId,
-        },
-        {
-          $set: {
-            ...payload,
-            isApproved: false,
-          },
-        },
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
+    const vehicle = await Vehicle.findOneAndDelete({
+      _id: id,
+      companyId: context.companyId,
+    });
 
     if (!vehicle) {
       return res.status(404).json({
         success: false,
-        message:
-          "Vehicle not found or it does not belong to your company",
+        message: "Vehicle not found or it does not belong to your company",
       });
     }
 
-    return res.status(200).json({
-      success: true,
-      message:
-        "Vehicle updated and returned to pending approval",
-      vehicle,
-    });
+    return res.status(200).json({ success: true, message: "Vehicle deleted successfully" });
   } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to update vehicle"
-    );
+    return sendError(res, error, "Failed to delete vehicle");
   }
 }
 
-/**
- * DELETE /api/vehicles/company/:id
- */
-export async function deleteCompanyVehicle(
-  req,
-  res
-) {
+export async function updateCompanyVehicleAvailability(req, res) {
   try {
-    const context = requireVehicleCompany(
-      req,
-      res
-    );
+    const context = requireCompanyContext(req, res);
+    if (!context) return;
 
-    if (!context) {
-      return;
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
+    }
+    if (req.body.isAvailable === undefined) {
+      return res.status(400).json({ success: false, message: "isAvailable is required" });
     }
 
-    if (!isValidObjectId(req.params.id)) {
-      return res.status(400).json({
+    const vehicle = await Vehicle.findOne({ _id: id, companyId: context.companyId });
+    if (!vehicle) {
+      return res.status(404).json({
         success: false,
-        message: "Invalid vehicle ID",
+        message: "Vehicle not found or it does not belong to your company",
       });
     }
 
-    const vehicle =
-      await Vehicle.findOneAndDelete({
-        _id: req.params.id,
+    vehicle.isAvailable = toBoolean(req.body.isAvailable);
+    await vehicle.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Vehicle availability updated successfully",
+      vehicle,
+    });
+  } catch (error) {
+    return sendError(res, error, "Failed to update vehicle availability", 400);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Vehicle administrator routes                                                */
+/* -------------------------------------------------------------------------- */
+
+export async function getAllVehiclesForAdmin(req, res) {
+  try {
+    if (!requireAdminContext(req, res)) return;
+
+    const vehicles = await Vehicle.find()
+      .populate("companyId", COMPANY_FIELDS)
+      .sort({ approvalStatus: 1, createdAt: -1 });
+
+    return res.status(200).json({ success: true, count: vehicles.length, vehicles });
+  } catch (error) {
+    return sendError(res, error, "Failed to load admin vehicles");
+  }
+}
+
+export async function approveVehicle(req, res) {
+  try {
+    if (!requireAdminContext(req, res)) return;
+
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
+    }
+
+    const vehicle = await Vehicle.findById(id);
+    if (!vehicle) {
+      return res.status(404).json({ success: false, message: "Vehicle not found" });
+    }
+
+    vehicle.isApproved = true;
+    vehicle.approvalStatus = "approved";
+    vehicle.rejectionReason = "";
+    await vehicle.save();
+    await vehicle.populate("companyId", COMPANY_FIELDS);
+
+    return res.status(200).json({
+      success: true,
+      message: "Vehicle approved successfully",
+      vehicle,
+    });
+  } catch (error) {
+    return sendError(res, error, "Failed to approve vehicle", 400);
+  }
+}
+
+export async function rejectVehicle(req, res) {
+  try {
+    if (!requireAdminContext(req, res)) return;
+
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
+    }
+
+    const vehicle = await Vehicle.findById(id);
+    if (!vehicle) {
+      return res.status(404).json({ success: false, message: "Vehicle not found" });
+    }
+
+    vehicle.isApproved = false;
+    vehicle.approvalStatus = "rejected";
+    vehicle.rejectionReason = String(req.body.reason || "").trim();
+    await vehicle.save();
+    await vehicle.populate("companyId", COMPANY_FIELDS);
+
+    return res.status(200).json({
+      success: true,
+      message: "Vehicle rejected successfully",
+      vehicle,
+    });
+  } catch (error) {
+    return sendError(res, error, "Failed to reject vehicle", 400);
+  }
+}
+
+export async function updateVehicleAvailability(req, res) {
+  try {
+    if (!requireAdminContext(req, res)) return;
+
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
+    }
+    if (req.body.isAvailable === undefined) {
+      return res.status(400).json({ success: false, message: "isAvailable is required" });
+    }
+
+    const vehicle = await Vehicle.findById(id);
+    if (!vehicle) {
+      return res.status(404).json({ success: false, message: "Vehicle not found" });
+    }
+
+    vehicle.isAvailable = toBoolean(req.body.isAvailable);
+    await vehicle.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Vehicle availability updated successfully",
+      vehicle,
+    });
+  } catch (error) {
+    return sendError(res, error, "Failed to update vehicle availability", 400);
+  }
+}
+
+export async function updateVehicle(req, res) {
+  try {
+    if (!requireAdminContext(req, res)) return;
+
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
+    }
+
+    const vehicle = await Vehicle.findById(id);
+    if (!vehicle) {
+      return res.status(404).json({ success: false, message: "Vehicle not found" });
+    }
+
+    const payload = buildVehiclePayload(req.body, { partial: true });
+    const validationMessage = validateVehiclePayload(payload, { partial: true });
+    if (validationMessage) {
+      return res.status(400).json({ success: false, message: validationMessage });
+    }
+
+    Object.assign(vehicle, payload);
+
+    if (req.body.companyId !== undefined) {
+      if (!isValidId(req.body.companyId)) {
+        return res.status(400).json({ success: false, message: "Invalid company ID" });
+      }
+      vehicle.companyId = req.body.companyId;
+    }
+    if (req.body.isAvailable !== undefined) {
+      vehicle.isAvailable = toBoolean(req.body.isAvailable);
+    }
+    if (req.body.approvalStatus !== undefined) {
+      const status = String(req.body.approvalStatus).toLowerCase();
+      if (!["pending", "approved", "rejected"].includes(status)) {
+        return res.status(400).json({ success: false, message: "Invalid approval status" });
+      }
+      vehicle.approvalStatus = status;
+      vehicle.isApproved = status === "approved";
+    } else if (req.body.isApproved !== undefined) {
+      vehicle.isApproved = toBoolean(req.body.isApproved);
+      vehicle.approvalStatus = vehicle.isApproved ? "approved" : "pending";
+    }
+
+    await vehicle.save();
+    await vehicle.populate("companyId", COMPANY_FIELDS);
+
+    return res.status(200).json({ success: true, message: "Vehicle updated successfully", vehicle });
+  } catch (error) {
+    return sendError(res, error, "Failed to update vehicle", 400);
+  }
+}
+
+export async function deleteVehicle(req, res) {
+  try {
+    if (!requireAdminContext(req, res)) return;
+
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
+    }
+
+    const vehicle = await Vehicle.findByIdAndDelete(id);
+    if (!vehicle) {
+      return res.status(404).json({ success: false, message: "Vehicle not found" });
+    }
+
+    await VehicleBooking.deleteMany({ vehicleId: id });
+    await VehicleReview.deleteMany({ vehicleId: id });
+
+    return res.status(200).json({ success: true, message: "Vehicle deleted successfully" });
+  } catch (error) {
+    return sendError(res, error, "Failed to delete vehicle");
+  }
+}
+
+export const createVehicle = createCompanyVehicle;
+
+/* -------------------------------------------------------------------------- */
+/* Vehicle booking routes                                                      */
+/* -------------------------------------------------------------------------- */
+
+export async function createVehicleBooking(req, res) {
+  try {
+    const travelerId = getLoggedInUserId(req);
+    const {
+      vehicleId,
+      startDate,
+      endDate,
+      passengers = 1,
+      pickupLocation = "",
+      dropoffLocation = "",
+      specialRequests = "",
+    } = req.body;
+
+    if (!travelerId || !isValidId(travelerId)) {
+      return res.status(401).json({ success: false, message: "Please log in to book a vehicle" });
+    }
+    if (!isValidId(vehicleId)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
+    }
+
+    const parsedStartDate = new Date(startDate);
+    const parsedEndDate = new Date(endDate);
+    const parsedPassengers = Number(passengers);
+
+    if (
+      Number.isNaN(parsedStartDate.getTime()) ||
+      Number.isNaN(parsedEndDate.getTime()) ||
+      parsedEndDate <= parsedStartDate
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Rental end date must be after the start date",
+      });
+    }
+    if (!Number.isInteger(parsedPassengers) || parsedPassengers < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Passengers must be a whole number of at least 1",
+      });
+    }
+
+    const vehicle = await Vehicle.findById(vehicleId);
+    if (!vehicle) {
+      return res.status(404).json({ success: false, message: "Vehicle not found" });
+    }
+    if (getApprovalStatus(vehicle) !== "approved" || vehicle.isAvailable === false) {
+      return res.status(400).json({
+        success: false,
+        message: "This vehicle is not currently available for booking",
+      });
+    }
+    if (parsedPassengers > vehicle.seats) {
+      return res.status(400).json({
+        success: false,
+        message: "Passenger count exceeds the vehicle seating capacity",
+      });
+    }
+    if (String(vehicle.companyId) === String(travelerId)) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot book your own company vehicle",
+      });
+    }
+
+    const overlap = await hasApprovedBookingOverlap({
+      vehicleId,
+      startDate: parsedStartDate,
+      endDate: parsedEndDate,
+    });
+
+    if (overlap) {
+      return res.status(409).json({
+        success: false,
+        message: "This vehicle is already booked for the selected dates",
+      });
+    }
+
+    const totalDays = calculateRentalDays(parsedStartDate, parsedEndDate);
+    const totalPrice = totalDays * Number(vehicle.pricePerDay);
+
+    const booking = await VehicleBooking.create({
+      travelerId,
+      vehicleId,
+      companyId: vehicle.companyId,
+      startDate: parsedStartDate,
+      endDate: parsedEndDate,
+      totalDays,
+      passengers: parsedPassengers,
+      pricePerDay: vehicle.pricePerDay,
+      totalPrice,
+      pickupLocation: String(pickupLocation || "").trim(),
+      dropoffLocation: String(dropoffLocation || "").trim(),
+      specialRequests: String(specialRequests || "").trim(),
+      status: "pending",
+    });
+
+    await booking.populate([
+      { path: "travelerId", select: TRAVELER_FIELDS },
+      { path: "vehicleId", select: "type model image seats pricePerDay location isAvailable isApproved approvalStatus" },
+      { path: "companyId", select: COMPANY_FIELDS },
+    ]);
+
+    return res.status(201).json({
+      success: true,
+      message: "Vehicle booking request submitted successfully",
+      booking,
+    });
+  } catch (error) {
+    return sendError(res, error, "Failed to create vehicle booking", 400);
+  }
+}
+
+export async function getMyVehicleBookings(req, res) {
+  try {
+    const travelerId = getLoggedInUserId(req);
+    if (!travelerId || !isValidId(travelerId)) {
+      return res.status(401).json({ success: false, message: "Please log in" });
+    }
+
+    const bookings = await VehicleBooking.find({ travelerId })
+      .populate("vehicleId", "type model image seats pricePerDay location")
+      .populate("companyId", COMPANY_FIELDS)
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({ success: true, count: bookings.length, bookings });
+  } catch (error) {
+    return sendError(res, error, "Failed to retrieve your vehicle bookings");
+  }
+}
+
+export async function getCompanyVehicleBookings(req, res) {
+  try {
+    const context = requireCompanyContext(req, res);
+    if (!context) return;
+
+    const bookings = await VehicleBooking.find({ companyId: context.companyId })
+      .populate("travelerId", TRAVELER_FIELDS)
+      .populate("vehicleId", "type model image seats pricePerDay location isAvailable isApproved approvalStatus")
+      .populate("companyId", COMPANY_FIELDS)
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({ success: true, count: bookings.length, bookings });
+  } catch (error) {
+    return sendError(res, error, "Failed to retrieve company vehicle bookings");
+  }
+}
+
+export async function updateCompanyBookingStatus(req, res) {
+  try {
+    const context = requireCompanyContext(req, res);
+    if (!context) return;
+
+    const { id } = req.params;
+    const status = String(req.body.status || "").trim().toLowerCase();
+    const companyMessage = String(req.body.companyMessage || "").trim();
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    }
+    if (!["approved", "rejected", "completed"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Status must be approved, rejected or completed",
+      });
+    }
+
+    const booking = await VehicleBooking.findOne({ _id: id, companyId: context.companyId });
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found or it does not belong to your company",
+      });
+    }
+
+    if (["cancelled", "completed"].includes(booking.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `A ${booking.status} booking cannot be changed`,
+      });
+    }
+
+    if (status === "approved") {
+      const vehicle = await Vehicle.findOne({
+        _id: booking.vehicleId,
         companyId: context.companyId,
       });
 
-    if (!vehicle) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Vehicle not found or it does not belong to your company",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Vehicle deleted successfully",
-    });
-  } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to delete vehicle"
-    );
-  }
-}
-
-/**
- * PATCH /api/vehicles/company/:id/availability
- *
- * Changes only isAvailable.
- * It does not delete the vehicle and does not change approval.
- */
-export async function updateCompanyVehicleAvailability(
-  req,
-  res
-) {
-  try {
-    const context = requireVehicleCompany(
-      req,
-      res
-    );
-
-    if (!context) {
-      return;
-    }
-
-    if (!isValidObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid vehicle ID",
-      });
-    }
-
-    if (
-      typeof req.body.isAvailable !==
-      "boolean"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "isAvailable must be true or false",
-      });
-    }
-
-    const vehicle =
-      await Vehicle.findOneAndUpdate(
-        {
-          _id: req.params.id,
-          companyId: context.companyId,
-        },
-        {
-          $set: {
-            isAvailable:
-              req.body.isAvailable,
-          },
-        },
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
-
-    if (!vehicle) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Vehicle not found or it does not belong to your company",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Vehicle availability updated successfully",
-      vehicle,
-    });
-  } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to update vehicle availability"
-    );
-  }
-}
-
-/**
- * GET /api/vehicles/admin/all
- */
-export async function getAllVehiclesForAdmin(
-  req,
-  res
-) {
-  try {
-    if (!requireAdmin(req, res)) {
-      return;
-    }
-
-    const filter = {};
-
-    if (req.query.type) {
-      const type = String(req.query.type)
-        .trim()
-        .toLowerCase();
-
-      if (!VEHICLE_TYPES.includes(type)) {
+      if (!vehicle || getApprovalStatus(vehicle) !== "approved" || vehicle.isAvailable === false) {
         return res.status(400).json({
           success: false,
-          message: "Invalid vehicle type",
+          message: "The selected vehicle is unavailable or not approved",
         });
       }
 
-      filter.type = type;
-    }
+      const overlap = await hasApprovedBookingOverlap({
+        vehicleId: booking.vehicleId,
+        startDate: booking.startDate,
+        endDate: booking.endDate,
+        excludeBookingId: booking._id,
+      });
 
-    if (req.query.companyId) {
-      if (!isValidObjectId(req.query.companyId)) {
-        return res.status(400).json({
+      if (overlap) {
+        return res.status(409).json({
           success: false,
-          message: "Invalid company ID",
+          message: "This vehicle already has an approved booking for these dates",
         });
       }
-
-      filter.companyId =
-        req.query.companyId;
     }
 
-    if (
-      req.query.isApproved !== undefined
-    ) {
-      filter.isApproved =
-        String(
-          req.query.isApproved
-        ).toLowerCase() === "true";
-    }
-
-    if (
-      req.query.isAvailable !== undefined
-    ) {
-      filter.isAvailable =
-        String(
-          req.query.isAvailable
-        ).toLowerCase() === "true";
-    }
-
-    const vehicles = await Vehicle.find(
-      filter
-    ).sort({
-      createdAt: -1,
-    });
-
-    return res.status(200).json({
-      success: true,
-      count: vehicles.length,
-      vehicles,
-    });
-  } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to load admin vehicles"
-    );
-  }
-}
-
-/**
- * PUT /api/vehicles/:id/approve
- */
-export async function approveVehicle(
-  req,
-  res
-) {
-  try {
-    if (!requireAdmin(req, res)) {
-      return;
-    }
-
-    if (!isValidObjectId(req.params.id)) {
+    if (status === "completed" && booking.status !== "approved") {
       return res.status(400).json({
         success: false,
-        message: "Invalid vehicle ID",
+        message: "Only an approved booking can be marked as completed",
       });
     }
 
-    const vehicle =
-      await Vehicle.findByIdAndUpdate(
-        req.params.id,
-        {
-          $set: {
-            isApproved: true,
-          },
-        },
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
+    booking.status = status;
+    booking.companyMessage = companyMessage;
+    await booking.save();
 
-    if (!vehicle) {
+    await booking.populate([
+      { path: "travelerId", select: TRAVELER_FIELDS },
+      { path: "vehicleId", select: "type model image seats pricePerDay location" },
+      { path: "companyId", select: COMPANY_FIELDS },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: `Booking ${status} successfully`,
+      booking,
+    });
+  } catch (error) {
+    return sendError(res, error, "Failed to update vehicle booking status");
+  }
+}
+
+export async function cancelMyVehicleBooking(req, res) {
+  try {
+    const travelerId = getLoggedInUserId(req);
+    const { id } = req.params;
+
+    if (!travelerId || !isValidId(travelerId)) {
+      return res.status(401).json({ success: false, message: "Please log in" });
+    }
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    }
+
+    const booking = await VehicleBooking.findOne({ _id: id, travelerId });
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+    if (["cancelled", "rejected", "completed"].includes(booking.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `A ${booking.status} booking cannot be cancelled`,
+      });
+    }
+
+    booking.status = "cancelled";
+    await booking.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Vehicle booking cancelled successfully",
+      booking,
+    });
+  } catch (error) {
+    return sendError(res, error, "Failed to cancel vehicle booking");
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Vehicle review routes                                                       */
+/* -------------------------------------------------------------------------- */
+
+export async function getPublicVehicleReviews(req, res) {
+  try {
+    const { vehicleId } = req.params;
+    if (!isValidId(vehicleId)) {
+      return res.status(400).json({ success: false, message: "Invalid vehicle ID" });
+    }
+
+    const reviews = await VehicleReview.find({ vehicleId, isVisible: true })
+      .populate("travelerId", "name profilePhoto")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({ success: true, count: reviews.length, reviews });
+  } catch (error) {
+    return sendError(res, error, "Failed to retrieve vehicle reviews");
+  }
+}
+
+export async function createVehicleReview(req, res) {
+  try {
+    const travelerId = getLoggedInUserId(req);
+    const { bookingId, rating, comment = "" } = req.body;
+
+    if (!travelerId || !isValidId(travelerId)) {
+      return res.status(401).json({ success: false, message: "Please log in" });
+    }
+    if (!isValidId(bookingId)) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    }
+
+    const parsedRating = Number(rating);
+    if (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: "Rating must be a whole number between 1 and 5",
+      });
+    }
+
+    const booking = await VehicleBooking.findOne({
+      _id: bookingId,
+      travelerId,
+      status: "completed",
+    });
+
+    if (!booking) {
       return res.status(404).json({
         success: false,
-        message: "Vehicle not found",
+        message: "A completed eligible booking was not found",
       });
     }
 
-    return res.status(200).json({
+    const review = await VehicleReview.create({
+      vehicleId: booking.vehicleId,
+      companyId: booking.companyId,
+      travelerId,
+      bookingId,
+      rating: parsedRating,
+      comment: String(comment || "").trim(),
+    });
+
+    await refreshVehicleRating(booking.vehicleId);
+    await review.populate([
+      { path: "travelerId", select: "name profilePhoto" },
+      { path: "vehicleId", select: "type model image rating reviewCount" },
+    ]);
+
+    return res.status(201).json({
       success: true,
-      message:
-        "Vehicle approved successfully",
-      vehicle,
+      message: "Vehicle review submitted successfully",
+      review,
     });
   } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to approve vehicle"
-    );
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "A review has already been submitted for this booking",
+      });
+    }
+    return sendError(res, error, "Failed to submit vehicle review", 400);
   }
 }
 
-/**
- * PUT /api/vehicles/:id/reject
- */
-export async function rejectVehicle(
-  req,
-  res
-) {
+export async function getCompanyVehicleReviews(req, res) {
   try {
-    if (!requireAdmin(req, res)) {
-      return;
-    }
+    const context = requireCompanyContext(req, res);
+    if (!context) return;
 
-    if (!isValidObjectId(req.params.id)) {
+    const reviews = await VehicleReview.find({ companyId: context.companyId })
+      .populate("travelerId", "name email profilePhoto")
+      .populate("vehicleId", "type model image rating reviewCount")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({ success: true, count: reviews.length, reviews });
+  } catch (error) {
+    return sendError(res, error, "Failed to retrieve company vehicle reviews");
+  }
+}
+
+export async function replyToVehicleReview(req, res) {
+  try {
+    const context = requireCompanyContext(req, res);
+    if (!context) return;
+
+    const { id } = req.params;
+    const companyReply = String(req.body.companyReply || "").trim();
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid review ID" });
+    }
+    if (companyReply.length > 2000) {
       return res.status(400).json({
         success: false,
-        message: "Invalid vehicle ID",
+        message: "Reply cannot exceed 2000 characters",
       });
     }
 
-    const vehicle =
-      await Vehicle.findByIdAndUpdate(
-        req.params.id,
-        {
-          $set: {
-            isApproved: false,
-          },
-        },
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
-
-    if (!vehicle) {
+    const review = await VehicleReview.findOne({ _id: id, companyId: context.companyId });
+    if (!review) {
       return res.status(404).json({
         success: false,
-        message: "Vehicle not found",
+        message: "Review not found or it does not belong to your company",
       });
     }
+
+    review.companyReply = companyReply;
+    await review.save();
+    await review.populate([
+      { path: "travelerId", select: "name email profilePhoto" },
+      { path: "vehicleId", select: "type model image rating reviewCount" },
+    ]);
 
     return res.status(200).json({
       success: true,
-      message:
-        "Vehicle moved to pending status",
-      vehicle,
+      message: "Review reply saved successfully",
+      review,
     });
   } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to reject vehicle"
-    );
+    return sendError(res, error, "Failed to save vehicle review reply");
   }
 }
-
-/**
- * PATCH /api/vehicles/:id/availability
- *
- * Admin availability update.
- */
-export async function updateVehicleAvailability(
-  req,
-  res
-) {
-  try {
-    if (!requireAdmin(req, res)) {
-      return;
-    }
-
-    if (!isValidObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid vehicle ID",
-      });
-    }
-
-    if (
-      typeof req.body.isAvailable !==
-      "boolean"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "isAvailable must be true or false",
-      });
-    }
-
-    const vehicle =
-      await Vehicle.findByIdAndUpdate(
-        req.params.id,
-        {
-          $set: {
-            isAvailable:
-              req.body.isAvailable,
-          },
-        },
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
-
-    if (!vehicle) {
-      return res.status(404).json({
-        success: false,
-        message: "Vehicle not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Vehicle availability updated successfully",
-      vehicle,
-    });
-  } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to update vehicle availability"
-    );
-  }
-}
-
-/**
- * PUT /api/vehicles/:id
- *
- * Admin general update.
- */
-export async function updateVehicle(
-  req,
-  res
-) {
-  try {
-    if (!requireAdmin(req, res)) {
-      return;
-    }
-
-    if (!isValidObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid vehicle ID",
-      });
-    }
-
-    const payload = buildVehiclePayload(
-      req.body,
-      {
-        partial: true,
-      }
-    );
-
-    if (
-      req.body.companyId !== undefined
-    ) {
-      if (
-        !isValidObjectId(
-          req.body.companyId
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid company ID",
-        });
-      }
-
-      payload.companyId =
-        req.body.companyId;
-    }
-
-    if (
-      req.body.isApproved !== undefined
-    ) {
-      if (
-        typeof req.body.isApproved !==
-        "boolean"
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "isApproved must be true or false",
-        });
-      }
-
-      payload.isApproved =
-        req.body.isApproved;
-    }
-
-    if (
-      req.body.isAvailable !== undefined
-    ) {
-      if (
-        typeof req.body.isAvailable !==
-        "boolean"
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "isAvailable must be true or false",
-        });
-      }
-
-      payload.isAvailable =
-        req.body.isAvailable;
-    }
-
-    const validationMessage =
-      validateVehiclePayload(payload, {
-        partial: true,
-      });
-
-    if (validationMessage) {
-      return res.status(400).json({
-        success: false,
-        message: validationMessage,
-      });
-    }
-
-    const vehicle =
-      await Vehicle.findByIdAndUpdate(
-        req.params.id,
-        {
-          $set: payload,
-        },
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
-
-    if (!vehicle) {
-      return res.status(404).json({
-        success: false,
-        message: "Vehicle not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Vehicle updated successfully",
-      vehicle,
-    });
-  } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to update vehicle"
-    );
-  }
-}
-
-/**
- * DELETE /api/vehicles/:id
- */
-export async function deleteVehicle(
-  req,
-  res
-) {
-  try {
-    if (!requireAdmin(req, res)) {
-      return;
-    }
-
-    if (!isValidObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid vehicle ID",
-      });
-    }
-
-    const vehicle =
-      await Vehicle.findByIdAndDelete(
-        req.params.id
-      );
-
-    if (!vehicle) {
-      return res.status(404).json({
-        success: false,
-        message: "Vehicle not found",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Vehicle deleted successfully",
-    });
-  } catch (error) {
-    return sendControllerError(
-      res,
-      error,
-      "Failed to delete vehicle"
-    );
-  }
-}
-
-/*
-  Compatibility alias for older code that imports createVehicle.
-*/
-export const createVehicle =
-  createCompanyVehicle;

@@ -2,30 +2,75 @@ import express from "express";
 
 import {
   approveHotel,
+  cancelMyHotelBooking,
+  createHotelBooking,
+  createHotelReview,
   createOwnerHotel,
   deleteHotel,
   deleteOwnerHotel,
   getAllHotels,
   getAllHotelsForAdmin,
   getHotelById,
+  getMyHotelBookings,
   getMyHotels,
+  getOwnerHotelBookings,
+  getOwnerHotelReviews,
+  getPublicHotelReviews,
   rejectHotel,
+  replyToHotelReview,
   updateHotel,
+  updateOwnerBookingStatus,
   updateOwnerHotel,
   updateOwnerHotelAvailability,
   updateOwnerRoomAvailability,
   updateOwnerRoomInventory,
 } from "../controllers/HotelController.js";
 
-const router = express.Router();
+/*
+|--------------------------------------------------------------------------
+| Routers
+|--------------------------------------------------------------------------
+|
+| All hotel-related routers are kept in this one file.
+|
+| index.js must mount them as:
+|
+| app.use("/api/hotels", hotelRouter);
+| app.use("/api/bookings", hotelBookingRouter);
+| app.use("/api/reviews", hotelReviewRouter);
+|
+*/
+
+const hotelRouter = express.Router();
+const hotelBookingRouter = express.Router();
+const hotelReviewRouter = express.Router();
+
+/*
+|--------------------------------------------------------------------------
+| Authentication helpers
+|--------------------------------------------------------------------------
+|
+| Your global JWT middleware in index.js already verifies the token and
+| assigns the decoded payload to req.user. Therefore, this file does not
+| import authenticateToken.js.
+|
+*/
 
 function getLoggedInUserId(req) {
   return (
     req.user?.userId ||
     req.user?.id ||
     req.user?._id ||
+    req.user?.sub ||
     null
   );
+}
+
+function normalizeRole(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
 }
 
 function requireAuth(req, res, next) {
@@ -36,7 +81,7 @@ function requireAuth(req, res, next) {
     });
   }
 
-  next();
+  return next();
 }
 
 function hotelOwnerOnly(req, res, next) {
@@ -47,14 +92,21 @@ function hotelOwnerOnly(req, res, next) {
     });
   }
 
-  if (req.user.role !== "hotel_owner") {
+  const role = normalizeRole(
+    req.user.role || req.user.userType
+  );
+
+  const isHotelOwner =
+    role === "hotel_owner" || role === "hotelowner";
+
+  if (!isHotelOwner) {
     return res.status(403).json({
       success: false,
       message: "Only hotel owners can access this route",
     });
   }
 
-  next();
+  return next();
 }
 
 function adminOnly(req, res, next) {
@@ -65,10 +117,12 @@ function adminOnly(req, res, next) {
     });
   }
 
+  const role = normalizeRole(
+    req.user.role || req.user.userType
+  );
+
   const isAdmin =
-    req.user.role === "admin" ||
-    req.user.userType === "admin" ||
-    req.user.isAdmin === true;
+    role === "admin" || req.user.isAdmin === true;
 
   if (!isAdmin) {
     return res.status(403).json({
@@ -77,50 +131,44 @@ function adminOnly(req, res, next) {
     });
   }
 
-  next();
+  return next();
 }
 
 /*
 |--------------------------------------------------------------------------
-| Public routes
+| Hotel routes — mounted at /api/hotels
 |--------------------------------------------------------------------------
 */
 
-// Approved and available hotels
-router.get("/", getAllHotels);
+// Public hotel list
+hotelRouter.get("/", getAllHotels);
 
-/*
-|--------------------------------------------------------------------------
-| Hotel-owner routes
-|--------------------------------------------------------------------------
-*/
-
-// Logged-in owner's hotels
-router.get(
+// Logged-in hotel owner's hotels
+hotelRouter.get(
   "/owner/my",
   requireAuth,
   hotelOwnerOnly,
   getMyHotels
 );
 
-// Create hotel
-router.post(
+// Create a hotel
+hotelRouter.post(
   "/owner",
   requireAuth,
   hotelOwnerOnly,
   createOwnerHotel
 );
 
-// Update hotel details
-router.put(
+// Update an owner's hotel
+hotelRouter.put(
   "/owner/:id",
   requireAuth,
   hotelOwnerOnly,
   updateOwnerHotel
 );
 
-// Delete owner's hotel
-router.delete(
+// Delete an owner's hotel
+hotelRouter.delete(
   "/owner/:id",
   requireAuth,
   hotelOwnerOnly,
@@ -128,7 +176,7 @@ router.delete(
 );
 
 // Change complete hotel availability
-router.patch(
+hotelRouter.patch(
   "/owner/:id/availability",
   requireAuth,
   hotelOwnerOnly,
@@ -136,74 +184,145 @@ router.patch(
 );
 
 // Change one room type's availability
-router.patch(
+hotelRouter.patch(
   "/owner/:id/rooms/:roomIndex/availability",
   requireAuth,
   hotelOwnerOnly,
   updateOwnerRoomAvailability
 );
 
-// Change one room type's total physical-room count
-router.patch(
+// Change one room type's inventory
+hotelRouter.patch(
   "/owner/:id/rooms/:roomIndex/inventory",
   requireAuth,
   hotelOwnerOnly,
   updateOwnerRoomInventory
 );
 
-/*
-|--------------------------------------------------------------------------
-| Admin routes
-|--------------------------------------------------------------------------
-*/
-
-// Get all hotel submissions
-router.get(
+// Administrator hotel list
+hotelRouter.get(
   "/admin/all",
   requireAuth,
   adminOnly,
   getAllHotelsForAdmin
 );
 
-// Approve hotel
-router.put(
+// Approve a hotel
+hotelRouter.put(
   "/:id/approve",
   requireAuth,
   adminOnly,
   approveHotel
 );
 
-// Reject hotel
-router.put(
+// Reject a hotel
+hotelRouter.put(
   "/:id/reject",
   requireAuth,
   adminOnly,
   rejectHotel
 );
 
-// Optional admin hotel update
-router.put(
+// Administrator hotel update
+hotelRouter.put(
   "/:id",
   requireAuth,
   adminOnly,
   updateHotel
 );
 
-// Admin delete hotel
-router.delete(
+// Administrator hotel delete
+hotelRouter.delete(
   "/:id",
   requireAuth,
   adminOnly,
   deleteHotel
 );
 
+// Keep the dynamic public route last
+hotelRouter.get("/:id", getHotelById);
+
 /*
 |--------------------------------------------------------------------------
-| Public hotel details
+| Booking routes — mounted at /api/bookings
 |--------------------------------------------------------------------------
 */
 
-// Keep this dynamic route last
-router.get("/:id", getHotelById);
+// Traveler creates a booking
+hotelBookingRouter.post(
+  "/",
+  requireAuth,
+  createHotelBooking
+);
 
-export default router;
+// Traveler views their bookings
+hotelBookingRouter.get(
+  "/my",
+  requireAuth,
+  getMyHotelBookings
+);
+
+// Hotel owner views bookings for their hotels
+hotelBookingRouter.get(
+  "/owner/my",
+  requireAuth,
+  hotelOwnerOnly,
+  getOwnerHotelBookings
+);
+
+// Hotel owner changes booking status
+hotelBookingRouter.patch(
+  "/owner/:id/status",
+  requireAuth,
+  hotelOwnerOnly,
+  updateOwnerBookingStatus
+);
+
+// Traveler cancels their booking
+hotelBookingRouter.patch(
+  "/:id/cancel",
+  requireAuth,
+  cancelMyHotelBooking
+);
+
+/*
+|--------------------------------------------------------------------------
+| Review routes — mounted at /api/reviews
+|--------------------------------------------------------------------------
+*/
+
+// Public hotel reviews
+hotelReviewRouter.get(
+  "/hotel/:hotelId",
+  getPublicHotelReviews
+);
+
+// Traveler creates a review
+hotelReviewRouter.post(
+  "/",
+  requireAuth,
+  createHotelReview
+);
+
+// Hotel owner views reviews for their hotels
+hotelReviewRouter.get(
+  "/owner/my",
+  requireAuth,
+  hotelOwnerOnly,
+  getOwnerHotelReviews
+);
+
+// Hotel owner replies to a review
+hotelReviewRouter.patch(
+  "/owner/:id/reply",
+  requireAuth,
+  hotelOwnerOnly,
+  replyToHotelReview
+);
+
+export {
+  hotelBookingRouter,
+  hotelReviewRouter,
+};
+
+export default hotelRouter;
