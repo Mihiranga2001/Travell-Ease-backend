@@ -6,17 +6,14 @@ import dotenv from "dotenv";
 
 import userRouter from "./Routes/userRouter.js";
 import touristPlaceRouter from "./Routes/touristPlaceRouter.js";
-
 import hotelRouter, {
   hotelBookingRouter,
   hotelReviewRouter,
 } from "./Routes/hotelRouter.js";
-
 import vehicleRouter, {
   vehicleBookingRouter,
   vehicleReviewRouter,
 } from "./Routes/vehicleRouter.js";
-
 import travelGuideRouter from "./Routes/travelGuideRouter.js";
 
 dotenv.config();
@@ -37,9 +34,7 @@ if (!process.env.JWT_SECRET_KEY) {
 
 mongoose
   .connect(mongoURI)
-  .then(() => {
-    console.log("Connected to the MongoDB database");
-  })
+  .then(() => console.log("Connected to the MongoDB database"))
   .catch((error) => {
     console.error("MongoDB connection error:", error);
     process.exit(1);
@@ -51,13 +46,12 @@ app.use(
     credentials: true,
   })
 );
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 /*
-  Global optional JWT middleware.
-  Public routes continue without a token. Protected routers check req.user.
+  Optional global authentication.
+  Public routes continue without a token. Protected routes check req.user.
 */
 app.use((req, res, next) => {
   const authorizationHeader = req.headers.authorization;
@@ -79,16 +73,12 @@ app.use((req, res, next) => {
     req.user = jwt.verify(token, process.env.JWT_SECRET_KEY);
     return next();
   } catch (error) {
-    if (error.name === "TokenExpiredError") {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication token has expired",
-      });
-    }
-
     return res.status(401).json({
       success: false,
-      message: "Invalid authentication token",
+      message:
+        error.name === "TokenExpiredError"
+          ? "Authentication token has expired"
+          : "Invalid authentication token",
     });
   }
 });
@@ -124,7 +114,6 @@ app.use((req, res) => {
 
 app.use((error, req, res, next) => {
   console.error("Unhandled server error:", error);
-
   return res.status(error.status || 500).json({
     success: false,
     message: error.message || "Internal server error",
@@ -134,11 +123,4 @@ app.use((error, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log(`Vehicle routes: http://localhost:${PORT}/api/vehicles`);
-  console.log(
-    `Vehicle booking routes: http://localhost:${PORT}/api/vehicle-bookings`
-  );
-  console.log(
-    `Vehicle review routes: http://localhost:${PORT}/api/vehicle-reviews`
-  );
 });
